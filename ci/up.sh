@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts three k3s server nodes as docker containers, imports $IMAGE into each
-# node's containerd, installs the operator from the checkout's own
-# `make generate-manifest` and waits for the Cluster in ci/cluster.yaml.
+# node's containerd, installs the operator from the checkout's config/ like a
+# release manifest and waits for the Cluster in ci/cluster.yaml.
 #
 # Usage: IMAGE=<operator image> KUBECONFIG=<file> bash ci/up.sh <cnpg checkout>
 set -euo pipefail
@@ -58,12 +58,17 @@ import_image() {
   done
 }
 
-# The default manifest has imagePullPolicy: Always on the operator Deployment,
-# which makes the kubelet ask a registry even when the node has the image.
-# That one line is the only change to the defaults.
+# Builds the manifest the way hack/release.sh builds releases/cnpg-<version>.yaml
+# (config/default with the controller image set), then changes one line: the
+# operator Deployment's imagePullPolicy: Always makes the kubelet ask a
+# registry even when the node has the image.
 install_operator() {
-  make -C "$SRC" generate-manifest CONTROLLER_IMG="$IMAGE" >/dev/null
-  local manifest=$SRC/dist/operator-manifest.yaml
+  make -C "$SRC" kustomize >/dev/null
+  local config manifest=/tmp/ci/operator.yaml
+  config=$(mktemp -d)
+  cp -r "$SRC"/config/* "$config"
+  (cd "$config/manager" && "$SRC/bin/kustomize" edit set image controller="$IMAGE")
+  "$SRC/bin/kustomize" build "$config/default" >"$manifest"
   [[ $(grep -c 'imagePullPolicy: Always' "$manifest") == 1 ]]
   sed -i 's/imagePullPolicy: Always/imagePullPolicy: IfNotPresent/' "$manifest"
   kubectl apply --server-side -f "$manifest" >/dev/null
