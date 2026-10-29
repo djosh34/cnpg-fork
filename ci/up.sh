@@ -54,7 +54,7 @@ start_k3s() {
 import_image() {
   local node
   for node in "${NODES[@]}"; do
-    docker save "$IMAGE" | docker exec -i "$node" k3s ctr -n k8s.io images import - >/dev/null
+    docker save "$IMAGE" | docker exec -i "$node" ctr -n k8s.io images import - >/dev/null
   done
 }
 
