@@ -1,0 +1,59 @@
+name: scenario
+
+# Builds the CNPG operator from a branch of a fork, starts three k3s nodes in
+# docker, installs the operator with its default manifest, brings up the
+# 3-instance Cluster in ci/cluster.yaml and runs scenarios/<scenario>.sh.
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Repository to build the operator from
+        default: djosh34/cloudnative-pg
+      ref:
+        description: Branch, tag or commit in that repository
+        default: main
+      scenario:
+        description: Script to run, scenarios/<scenario>.sh
+        default: smoke
+  push:
+    branches: [research/12-k3s-operator]
+
+permissions:
+  contents: read
+
+jobs:
+  scenario:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      REPOSITORY: ${{ inputs.repository || 'djosh34/cloudnative-pg' }}
+      REF: ${{ inputs.ref || 'main' }}
+      SCENARIO: ${{ inputs.scenario || 'smoke' }}
+      KUBECONFIG: /tmp/ci/kubeconfig
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.REPOSITORY }}
+          ref: ${{ env.REF }}
+          path: src
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+      - name: Build the operator image
+        run: bash ci/build-operator.sh src
+      - name: Start k3s and install the operator
+        run: bash ci/up.sh src
+      - name: Run scenarios/${{ env.SCENARIO }}.sh
+        run: bash "scenarios/$SCENARIO.sh"
+      - name: State after a failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide
+          kubectl get pods -A -o wide
+          kubectl get cluster -A -o yaml
+          kubectl logs -n cnpg-system deployment/cnpg-controller-manager --tail=200

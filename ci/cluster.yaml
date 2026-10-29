@@ -1,0 +1,11 @@
+# Three instances with the operator's default PostgreSQL image and the k3s
+# default StorageClass (local-path).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pg
+  namespace: default
+spec:
+  instances: 3
+  storage:
+    size: 1Gi
